@@ -12,7 +12,7 @@ import Control.Applicative
 
 spaces :: Parser Int
 spaces = do
-    ss <- many1 $ char ' '
+    ss <- many $ char ' '
     return $ length ss
 
 restOfLine :: Parser Text

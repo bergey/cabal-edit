@@ -13,6 +13,10 @@ data DetailedPackage =
     GlobalField Int Text Int Text [ContinuationLine] |
     Section Int Text Int Text [SectionField] |
     BlankLine
+    deriving (Show, Eq)
 
 data ContinuationLine = ContinuationLine Int Text
+    deriving (Show, Eq)
+
 data SectionField = SectionField Int Text Int Text [ContinuationLine]
+    deriving (Show, Eq)
