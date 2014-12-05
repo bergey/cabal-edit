@@ -17,18 +17,22 @@ spaces = do
     return $ length ss
 
 restOfLine :: Parser Text
-restOfLine = pack <$> manyTill anyChar (void endOfLine <|> eof)
+restOfLine = pack <$> many (noneOf "\r\n") <* endOfLine
 
 fieldName :: Parser Text
-fieldName = pack <$> manyTill (char '-' <|> letter) (char ':')
+fieldName = pack <$> manyTill identiferChar (char ':')
+
+identiferChar :: Parser Char
+identiferChar = char '-' <|> letter
 
 continuationLine :: Int -> Parser ContinuationLine
-continuationLine i  = try $ do
-    s <- spaces
-    if s > i then ContinuationLine s <$> restOfLine
-        else fail "not indented enough for continuation line"
+continuationLine i  = blankLine BlankCLine <|> try nonEmpty where
+  nonEmpty = do
+      s <- spaces
+      if s > i then ContinuationLine s <$> restOfLine
+          else fail "not indented enough for continuation line"
 
-sectionField :: Int -> Parser SectionField
+sectionField :: Int -> Parser SectionLine
 sectionField i = try $ do
     s <- spaces
     if s > i then SectionField s <$> fieldName <*> spaces <*> restOfLine <*>
@@ -47,18 +51,18 @@ globalField = try $ do
 section :: Parser DetailedPackage
 section = try $ do
     s <- spaces
-    Section s <$> (pack <$> many1 letter) <*> spaces <*> restOfLine <*>
-        many (sectionField s)
+    Section s <$> (pack <$> many1 identiferChar) <*> spaces <*> restOfLine <*>
+        many (sectionField s <|> blankLine  BlankSLine)
 
-blankLine :: Parser DetailedPackage
-blankLine = spaces *> (void endOfLine <|> eof) *> pure BlankLine
+blankLine :: a -> Parser a
+blankLine a = try $ spaces *> (endOfLine) *> pure a
 
 detailedPackageLine :: Parser DetailedPackage
 detailedPackageLine =
     label comment "comment" <|>
     label globalField "global field" <|>
-    label section "section" <|>
-    label blankLine "blank line"
+    label section "section"
+    -- label (blankLine BlankLine) "blank line"
 
 detailedParser :: Parser [DetailedPackage]
-detailedParser = many detailedPackageLine
+detailedParser = many detailedPackageLine <* spaces <* eof

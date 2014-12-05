@@ -11,12 +11,13 @@ import Data.Text (Text)
 data DetailedPackage =
     Comment Int Text|
     GlobalField Int Text Int Text [ContinuationLine] |
-    Section Int Text Int Text [SectionField] |
-    BlankLine
+    Section Int Text Int Text [SectionLine]
+    -- BlankLine
     deriving (Show, Eq)
 
-data ContinuationLine = ContinuationLine Int Text
+data ContinuationLine = ContinuationLine Int Text | BlankCLine
     deriving (Show, Eq)
 
-data SectionField = SectionField Int Text Int Text [ContinuationLine]
+data SectionLine = SectionField Int Text Int Text [ContinuationLine] |
+                   BlankSLine
     deriving (Show, Eq)

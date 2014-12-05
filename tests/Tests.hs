@@ -61,14 +61,17 @@ tests = testGroup "Detailed"
             , testCase "section accepts library" $
               run section "library\n  build-depends: array\n" `assertRight`
               Section 0 "library" 0 "" [SectionField 2 "build-depends" 1 "array" []]
-          , testCase "blankLine accepts no spaces" $ run blankLine "\n" `assertRight` BlankLine
-          , testCase "blankLine accepts some space" $ run blankLine "  \n" `assertRight` BlankLine
-          , testCase "blankLine rejects letters" $ assertLeft $ run blankLine "a \n"
+          , testCase "blankLine accepts no spaces" $ run (blankLine ()) "\n" `assertRight` ()
+          , testCase "blankLine accepts some space" $ run (blankLine ()) "  \n" `assertRight` ()
+          , testCase "blankLine rejects letters" $ assertLeft $ run (blankLine ()) "a \n"
           ]
         , testGroup "Top-Level Parser"
           [ testCase "comment; global; blank; section" $
             run detailedParser "--a\nb: c\n\nflag f\n  default: t\n" `assertRight`
             [Comment 0 "a", GlobalField 0 "b" 1 "c" [], BlankLine, Section 0 "flag" 1 "f" [SectionField 2 "default" 1 "t" []]]
+          , testCase "two sections" $
+            run detailedParser "a\n  b:\n    c\n    d\n  e:v\n\n\nf g\n  h:\n" `assertRight`
+            [Section 0 "a" 0 "" [SectionField 2 "b" 0 "" [ContinuationLine 4 "c", ContinuationLine 4 "d"], SectionField 2 "e" 0 "v" [], BlankSectionLine, BlankSectionLine], Section 0 "f" 1 "g" [SectionField 2 "h" 0 "" []]]
           ]
         ]
 

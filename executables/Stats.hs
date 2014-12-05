@@ -5,7 +5,10 @@ module Main where
 
 import           Edit.Types
 import           Edit.Parser
+import Edit.Printer
+import Hackage
 
+import System.Environment
 import Data.Typeable
 import Data.Data
 import Data.Either (rights)
@@ -30,63 +33,38 @@ import Prelude hiding
     , maximum, maximumBy, readFile, writeFile)
 
 main :: IO ()
-main = debugMain
--- main = shelly $ do
---     packages <- take 10 <$> ls (fromText hackagePath)
---     echo $ showT packages
---     cabals <- traverse packageStat packages
---     echo $ showT cabals
---     -- echo_n . textSummary . mconcat $ cabals
+-- main = debugMain
+main = shelly $ do
+    args <- liftIO getArgs
+    let limit = case args of
+            [] -> Nothing
+            (a:_) -> Just $ read a
+    cabals <- scanHackage (fromText hackagePath) limit
+    traverse_ printCabals cabals
+    summaries <- traverse packageStat cabals
+    echo_n_err . textSummary . mconcat $ summaries
 
-debugMain :: IO ()
-debugMain = shelly $ do
-    let path = "/home/bergey/tmp/index/cereal/0.4.1.0/cereal.cabal"
-    echo path
-    cabal <- readfile $ fromText path
-    echo cabal
-    echo "Starting Parser"
-    echo . showT $ parse detailedParser (T.unpack path) cabal
+-- debugMain :: IO ()
+-- debugMain = shelly $ do
+--     let path = "/home/bergey/tmp/index/cereal/0.4.1.0/cereal.cabal"
+--     echo path
+--     cabal <- readfile $ fromText path
+--     echo cabal
+--     echo "Starting Parser"
+--     echo . showT $ parse detailedParser (T.unpack path) cabal
 
 hackagePath :: Text
 hackagePath = "/home/bergey/tmp/index"
 
--- packageStat :: FilePath -> Sh PackageStat
-packageStat :: FilePath -> Sh String
-packageStat dir = do
-    versions <- traverse toTextWarn =<< ls dir
-    let newest = newestVersion versions
-    fns <- traverse toTextWarn =<< filter (hasExt "cabal") <$> ls (dir </> newest)
-    let cabalFileName = case fns of
-            [] -> throw . IndexLayoutError $ "packageStat: expected .cabal file in " <> newest
-            [c] -> c
-            _ -> throw . IndexLayoutError $ "packageStat: only expected one .cabal file in " <> newest
-    cabal <- readfile (dir </> newest </> cabalFileName)
-    case parse detailedParser (T.unpack cabalFileName) cabal of
-     Right c -> return $ show c
-     Left c -> return $ show c
-    --  Right c -> return $ stats c
-    --  Left e -> echo (showT e) >> return mempty
+packageStat :: Either ParseError [DetailedPackage] -> Sh PackageStat
+packageStat (Right c) = return $ stats c
+packageStat (Left e) = echo_err (showT e) >> return mempty { _failedParses = 1 }
 
--- | Pick newest version based on standard package numbering.  If we
--- can't make sense of the version number, fall back to lexicographic
--- ordering.
-newestVersion :: [Text] -> Text
-newestVersion [] = throw $ IndexLayoutError "newestVersion: Cannot pick one from an empty list"
-newestVersion vs = case rights $ fmap splitVersion vs of
-    [] -> maximum vs
-    vs' -> fst . maximumBy (comparing snd) $ zip vs vs'
+-- data AppError =
+--     IndexLayoutError Text
+--     deriving (Typeable, Data, Show)
 
-splitVersion :: Text -> Either String [Int]
-splitVersion = traverse (fmap fst . T.decimal) .  T.splitOn "."
-
--- joinVersion :: [Int] -> FilePath
--- joinVersion = fromText . intersperse '.'
-
-data AppError =
-    IndexLayoutError Text
-    deriving (Typeable, Data, Show)
-
-instance Exception AppError
+-- instance Exception AppError
 
 -- stats :: [DetailedPackage] -> PackageStat
 -- stats = HackageStaft 1 globalCol valueCol valueSpace sectionCol where
@@ -124,37 +102,48 @@ instance Exception AppError
 
 data PackageStat = PackageStat {
     _packageCount :: Int,
+    _failedParses :: Int,
+    _sourceSections :: Int,
     _executableSections :: Int,
     _librarySections :: Int,
+    _testSections :: Int,
     _flags :: Int,
-    _otherSections :: Int
+    _otherSections :: [Text]
     }
 
 instance Monoid PackageStat where
-    mempty = PackageStat 0 0 0 0 0
-    (PackageStat a1 b1 c1 d1 e1) `mappend` (PackageStat a2 b2 c2 d2 e2) =
-        PackageStat (a1 + a2) (b1 + b2) (c1 + c2) (d1 + d2) (e1 + e2)
+    mempty = PackageStat 0 0 0 0 0 0 0 []
+    (PackageStat a1 b1 c1 d1 e1 f1 g1 h1) `mappend` (PackageStat a2 b2 c2 d2 e2 f2 g2 h2) =
+        PackageStat (a1 + a2) (b1 + b2) (c1 + c2) (d1 + d2) (e1 + e2) (f1 + f2) (g1 + g2) (h1 <> h2)
 
 stats :: [DetailedPackage] -> PackageStat
 stats ds = (mconcat $ fmap goLine ds) {_packageCount = 1} where
-  goLine (Section _ t _ _ _) = case t of
-      "executable" -> PackageStat 0 1 0 0 0
-      "library" -> PackageStat 0 0 1 0 0
-      "flag" -> PackageStat 0 0 0 1 0
-      _ -> PackageStat 0 0 0 0 1
+  goLine (Section _ t _ _ _) = case T.toLower t of
+      "source-repository" -> mempty { _sourceSections = 1 }
+      "executable" -> mempty { _executableSections = 1}
+      "library" -> mempty { _librarySections = 1}
+      "test-suite" -> mempty { _testSections = 1 }
+      "flag" -> mempty { _flags = 1}
+      _ -> mempty { _otherSections = [t]}
   goLine _ = mempty
 
 showT :: Show s => s -> Text
 showT = T.pack . show
 
-showB :: Show s => s -> TB.Builder
-showB = TB.fromString . show
+-- showB :: Show s => s -> TB.Builder
+-- showB = TB.fromString . show
 
 textSummary :: PackageStat -> Text
 textSummary ps = toStrict . TB.toLazyText $
-  "found " <> showB (_packageCount ps) <> " packages in " <> TB.fromText hackagePath <> "\n" <>
+  "\nfound " <> showB (_packageCount ps) <> " packages in " <> TB.fromText hackagePath <> "\n" <>
   "containing:\n" <>
   showB (_executableSections ps) <> " executable sections,\n" <>
   showB (_librarySections ps) <> " library sections,\n" <>
   showB (_flags ps) <> " flag definitions,\n" <>
-  "and " <> showB (_otherSections ps) <> " other sections\n"
+  "and " <> (showB . length . _otherSections $ ps) <> " other sections\n\n" <>
+  "failed to parse " <> showB (_failedParses ps)  <> " packages\n" <>
+  "found unknown sections :" <> showB (_otherSections ps) <> "\n\n"
+
+printCabals :: Either ParseError [DetailedPackage] -> Sh ()
+printCabals (Left  _) = return ()
+printCabals (Right p) = echo . toStrict . TB.toLazyText . debugDetailedPrint $ p
