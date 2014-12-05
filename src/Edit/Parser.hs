@@ -9,6 +9,7 @@ import Text.Parsec hiding (space, spaces, many, (<|>))
 import Text.Parsec.Text
 import Data.Text (Text, pack)
 import Control.Applicative
+import Data.Functor (void)
 
 spaces :: Parser Int
 spaces = do
@@ -16,7 +17,7 @@ spaces = do
     return $ length ss
 
 restOfLine :: Parser Text
-restOfLine = pack <$> manyTill anyChar endOfLine
+restOfLine = pack <$> manyTill anyChar (void endOfLine <|> eof)
 
 fieldName :: Parser Text
 fieldName = pack <$> manyTill (char '-' <|> letter) (char ':')
@@ -49,4 +50,15 @@ section = try $ do
     Section s <$> (pack <$> many1 letter) <*> spaces <*> restOfLine <*>
         many (sectionField s)
 
-blankLine = spaces *> endOfLine
+blankLine :: Parser DetailedPackage
+blankLine = spaces *> (void endOfLine <|> eof) *> pure BlankLine
+
+detailedPackageLine :: Parser DetailedPackage
+detailedPackageLine =
+    label comment "comment" <|>
+    label globalField "global field" <|>
+    label section "section" <|>
+    label blankLine "blank line"
+
+detailedParser :: Parser [DetailedPackage]
+detailedParser = many detailedPackageLine

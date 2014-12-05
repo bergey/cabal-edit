@@ -29,6 +29,8 @@ tests = testGroup "Detailed"
               assertLeft $ run (sectionField 4) " one: two\n"
           , testCase "sectionField succeeds with good indent" $
               run (sectionField 2) "     five: six\n" `assertRight` (SectionField 5 "five" 1 "six" [])
+          , testCase "typical sectionField in executable" $
+            run (sectionField 0) "  main-is: b.hs\n" `assertRight` SectionField 2 "main-is" 1 "b.hs" []
           ]
         , testGroup "Individual Top Level Constructors"
           [ testCase "comment requires --" $
@@ -50,6 +52,23 @@ tests = testGroup "Detailed"
           , testCase "globalField doesn't include next line" $
             run globalField "description: some words\nauthor: Daniel Bergey\n" `assertRight`
             GlobalField 0 "description" 1 "some words" []
+          , testCase "section accepts executable" $
+            run section "executable a\n  main-is: b.hs\n" `assertRight`
+            Section 0 "executable" 1 "a" [SectionField 2 "main-is" 1 "b.hs" []]
+          , testCase "section accepts flag" $
+            run section "flag f\n  default: False\n  manual: True\n" `assertRight`
+            Section 0 "flag" 1 "f" [SectionField 2 "default" 1 "False" [], SectionField 2 "manual" 1 "True" []]
+            , testCase "section accepts library" $
+              run section "library\n  build-depends: array\n" `assertRight`
+              Section 0 "library" 0 "" [SectionField 2 "build-depends" 1 "array" []]
+          , testCase "blankLine accepts no spaces" $ run blankLine "\n" `assertRight` BlankLine
+          , testCase "blankLine accepts some space" $ run blankLine "  \n" `assertRight` BlankLine
+          , testCase "blankLine rejects letters" $ assertLeft $ run blankLine "a \n"
+          ]
+        , testGroup "Top-Level Parser"
+          [ testCase "comment; global; blank; section" $
+            run detailedParser "--a\nb: c\n\nflag f\n  default: t\n" `assertRight`
+            [Comment 0 "a", GlobalField 0 "b" 1 "c" [], BlankLine, Section 0 "flag" 1 "f" [SectionField 2 "default" 1 "t" []]]
           ]
         ]
 
